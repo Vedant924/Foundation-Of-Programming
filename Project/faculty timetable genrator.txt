@@ -1,0 +1,229 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+#include <time.h>
+
+/* ==================== CONSTANTS ==================== */
+#define MAX_TEACHERS 10
+#define MAX_SUBJECTS 15
+#define MAX_SLOTS_PER_DAY 8
+#define NUM_DAYS 5
+#define MAX_NAME_LENGTH 50
+#define MAX_LECTURES_PER_DAY 3
+
+#define COLLEGE_START_TIME 510
+#define LECTURE_DURATION 60
+#define SHORT_BREAK 15
+#define LONG_BREAK 45
+
+/* ==================== ENUM ==================== */
+typedef enum { MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY } Day;
+typedef enum { THEORY, LAB } ClassType;
+typedef enum { SLOT_EMPTY, SLOT_OCCUPIED, SLOT_LAB_CONT } SlotStatus;
+
+/* ==================== STRUCTURES ==================== */
+typedef struct {
+    int id;
+    char name[MAX_NAME_LENGTH];
+    int lectures_per_day[NUM_DAYS];
+    bool is_active;
+} Teacher;
+
+typedef struct {
+    int id;
+    char name[MAX_NAME_LENGTH];
+    int teacher_id;
+    ClassType type;
+    int weekly_hours;
+    int assigned;
+    bool is_active;
+} Subject;
+
+typedef struct {
+    int subject_id;
+    int teacher_id;
+    SlotStatus status;
+} Slot;
+
+typedef struct {
+    Slot slots[MAX_SLOTS_PER_DAY];
+} DaySchedule;
+
+typedef struct {
+    DaySchedule days[NUM_DAYS];
+} Timetable;
+
+typedef struct {
+    Teacher teachers[MAX_TEACHERS];
+    int teacher_count;
+    Subject subjects[MAX_SUBJECTS];
+    int subject_count;
+    Timetable tt;
+} SystemData;
+
+/* ==================== UTIL ==================== */
+void clear() {
+    int c;
+    while ((c = getchar()) != '\n' && c != EOF);
+}
+
+int inputInt(char *msg, int min, int max) {
+    int x;
+    while (1) {
+        printf("%s", msg);
+        if (scanf("%d", &x) != 1) {
+            clear();
+            continue;
+        }
+        if (x >= min && x <= max) break;
+    }
+    clear();
+    return x;
+}
+
+void inputStr(char *msg, char *buf) {
+    printf("%s", msg);
+    fgets(buf, MAX_NAME_LENGTH, stdin);
+    buf[strcspn(buf, "\n")] = 0;
+}
+
+/* ==================== INIT ==================== */
+void init(SystemData *d) {
+    memset(d, 0, sizeof(SystemData));
+
+    for (int i = 0; i < MAX_TEACHERS; i++)
+        d->teachers[i].is_active = false;
+
+    for (int i = 0; i < MAX_SUBJECTS; i++)
+        d->subjects[i].is_active = false;
+
+    for (int i = 0; i < NUM_DAYS; i++)
+        for (int j = 0; j < MAX_SLOTS_PER_DAY; j++)
+            d->tt.days[i].slots[j].status = SLOT_EMPTY;
+}
+
+/* ==================== ADD ==================== */
+void addTeacher(SystemData *d) {
+    char name[MAX_NAME_LENGTH];
+    inputStr("Enter name: ", name);
+
+    int id = d->teacher_count;
+    strcpy(d->teachers[id].name, name);
+    d->teachers[id].id = id;
+    d->teachers[id].is_active = true;
+
+    d->teacher_count++;
+}
+
+void addSubject(SystemData *d) {
+    char name[MAX_NAME_LENGTH];
+    inputStr("Enter subject: ", name);
+
+    for (int i = 0; i < d->teacher_count; i++)
+        printf("%d: %s\n", i, d->teachers[i].name);
+
+    int t = inputInt("Teacher ID: ", 0, d->teacher_count - 1);
+    int type = inputInt("0-Theory 1-Lab: ", 0, 1);
+    int hrs = inputInt("Hours: ", 1, 10);
+
+    int id = d->subject_count;
+    Subject *s = &d->subjects[id];
+
+    strcpy(s->name, name);
+    s->teacher_id = t;
+    s->type = type;
+    s->weekly_hours = hrs;
+    s->assigned = 0;
+    s->is_active = true;
+
+    d->subject_count++;
+}
+
+/* ==================== CHECK ==================== */
+int freeSlot(SystemData *d, int day, int slot) {
+    return d->tt.days[day].slots[slot].status == SLOT_EMPTY;
+}
+
+/* ==================== ASSIGN ==================== */
+void assignTheory(SystemData *d, int day, int slot, Subject *s) {
+    Slot *sl = &d->tt.days[day].slots[slot];
+
+    sl->subject_id = s->id;
+    sl->teacher_id = s->teacher_id;
+    sl->status = SLOT_OCCUPIED;
+
+    s->assigned++;
+}
+
+void assignLab(SystemData *d, int day, int slot, Subject *s) {
+    for (int i = 0; i < 2; i++) {
+        Slot *sl = &d->tt.days[day].slots[slot + i];
+        sl->subject_id = s->id;
+        sl->teacher_id = s->teacher_id;
+        sl->status = SLOT_LAB_CONT;
+    }
+    s->assigned += 2;
+}
+
+/* ==================== GENERATE ==================== */
+void generate(SystemData *d) {
+    srand(time(NULL));
+
+    for (int i = 0; i < d->subject_count; i++) {
+        Subject *s = &d->subjects[i];
+
+        while (s->assigned < s->weekly_hours) {
+            int day = rand() % NUM_DAYS;
+            int slot = rand() % MAX_SLOTS_PER_DAY;
+
+            if (s->type == THEORY) {
+                if (freeSlot(d, day, slot)) {
+                    assignTheory(d, day, slot, s);
+                }
+            } else {
+                if (slot < 7 && freeSlot(d, day, slot) && freeSlot(d, day, slot + 1)) {
+                    assignLab(d, day, slot, s);
+                }
+            }
+        }
+    }
+
+    printf("\nTimetable Generated!\n");
+}
+
+/* ==================== DISPLAY ==================== */
+void show(SystemData *d) {
+    for (int i = 0; i < NUM_DAYS; i++) {
+        printf("\nDay %d:\n", i + 1);
+        for (int j = 0; j < MAX_SLOTS_PER_DAY; j++) {
+            Slot *s = &d->tt.days[i].slots[j];
+
+            if (s->status == SLOT_EMPTY)
+                printf("Free\t");
+            else
+                printf("S%d\t", s->subject_id);
+        }
+        printf("\n");
+    }
+}
+
+/* ==================== MAIN ==================== */
+int main() {
+    SystemData d;
+    init(&d);
+
+    int ch;
+    do {
+        printf("\n1.Add Teacher\n2.Add Subject\n3.Generate\n4.Show\n0.Exit\n");
+        ch = inputInt("Choice: ", 0, 4);
+
+        if (ch == 1) addTeacher(&d);
+        else if (ch == 2) addSubject(&d);
+        else if (ch == 3) generate(&d);
+        else if (ch == 4) show(&d);
+
+    } while (ch != 0);
+
+    return 0;
+}
